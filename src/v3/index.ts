@@ -15,7 +15,13 @@
 export { TrustStateBaasClient } from './baas';
 
 // Compliance pipeline
-export { WriteHandler, ViolationService, EntityStateService } from './compliance';
+export {
+  WriteHandler,
+  ViolationService,
+  EntityStateService,
+  ComplianceMoleculeFactory,
+} from './compliance';
+export type { AtomResult, MoleculeResult } from './compliance';
 
 // Schema management
 export { SchemaService } from './schemas';

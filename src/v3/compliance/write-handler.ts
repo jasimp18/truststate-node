@@ -18,6 +18,7 @@ import { SchemaService } from '../schemas';
 import { PolicyService } from '../policies';
 import { ViolationService } from './violations';
 import { EntityStateService } from './entity-state';
+import { ComplianceMoleculeFactory } from './molecule-factory';
 import type {
   WriteRequest,
   WriteResponse,
@@ -32,6 +33,7 @@ export class WriteHandler {
   private readonly policies: PolicyService;
   private readonly violations: ViolationService;
   private readonly entityState: EntityStateService;
+  private readonly moleculeFactory: ComplianceMoleculeFactory;
 
   constructor(private readonly baas: BaasClient) {
     this.registry = new RegistryService(baas);
@@ -39,6 +41,7 @@ export class WriteHandler {
     this.policies = new PolicyService(baas);
     this.violations = new ViolationService(baas);
     this.entityState = new EntityStateService(baas);
+    this.moleculeFactory = new ComplianceMoleculeFactory(baas, this.entityState);
   }
 
   /**
@@ -177,7 +180,7 @@ export class WriteHandler {
   }
 
   // ---------------------------------------------------------------------------
-  // Policy evaluation
+  // Policy evaluation (via ComplianceMoleculeFactory)
   // ---------------------------------------------------------------------------
 
   private async evaluatePolicies(
@@ -201,10 +204,12 @@ export class WriteHandler {
 
     for (const doc of policiesResult.documents) {
       const policy = doc.data as unknown as PolicyDefinition;
-      const atomResults = this.evaluateAtoms(policy, request, entityId);
 
-      if (atomResults.failedAtoms.length > 0) {
-        failedPolicies.push({ name: policy.name, atoms: atomResults.failedAtoms });
+      // Evaluate all atoms via ComplianceMoleculeFactory
+      const moleculeResult = await this.moleculeFactory.evaluate(policy, request, entityId);
+
+      if (!moleculeResult.passed) {
+        failedPolicies.push({ name: policy.name, atoms: moleculeResult.failedAtoms });
 
         // Track strictest enforcement
         if (policy.enforcement === 'strict') strictestEnforcement = 'strict';
@@ -227,122 +232,6 @@ export class WriteHandler {
       reason,
       failedPolicies,
     };
-  }
-
-  /**
-   * Evaluate V3 atoms for a policy.
-   *
-   * This is the integration point with the V3 rules engine.
-   * Each atom type is evaluated against the request data.
-   */
-  private evaluateAtoms(
-    policy: PolicyDefinition,
-    request: WriteRequest,
-    _entityId: string
-  ): { failedAtoms: string[] } {
-    const failedAtoms: string[] = [];
-
-    for (const atom of policy.atoms) {
-      if (!atom.required) continue; // Skip advisory atoms
-
-      let passed = true;
-
-      switch (atom.type) {
-        case 'field-values': {
-          // Validate specific field constraints
-          const constraints = atom.config as Record<string, unknown>;
-          if (constraints.allowedValues && typeof constraints.field === 'string') {
-            const fieldValue = request.data[constraints.field as string];
-            const allowed = constraints.allowedValues as unknown[];
-            if (!allowed.includes(fieldValue)) {
-              passed = false;
-            }
-          }
-          break;
-        }
-
-        case 'schema-validation': {
-          // Already handled in Step 1 — skip here
-          break;
-        }
-
-        case 'time-range': {
-          // Check if current time is within allowed range
-          const config = atom.config as { startHour?: number; endHour?: number };
-          if (config.startHour !== undefined && config.endHour !== undefined) {
-            const hour = new Date().getUTCHours();
-            if (hour < config.startHour || hour > config.endHour) {
-              passed = false;
-            }
-          }
-          break;
-        }
-
-        case 'permission-list': {
-          // Check if actor is in the permission list
-          const config = atom.config as { allowed?: string[]; denied?: string[] };
-          const actorId = request.actorId ?? 'anonymous';
-          if (config.denied?.includes(actorId)) {
-            passed = false;
-          }
-          if (config.allowed && !config.allowed.includes(actorId)) {
-            passed = false;
-          }
-          break;
-        }
-
-        case 'limits': {
-          // Numeric limit checks on data fields
-          const config = atom.config as { field?: string; min?: number; max?: number };
-          if (config.field) {
-            const value = request.data[config.field];
-            if (typeof value === 'number') {
-              if (config.min !== undefined && value < config.min) passed = false;
-              if (config.max !== undefined && value > config.max) passed = false;
-            }
-          }
-          break;
-        }
-
-        case 'external-evidence': {
-          // Require evidence items to be present
-          const config = atom.config as { requiredOracles?: string[] };
-          if (config.requiredOracles) {
-            const providedOracles = (request.evidence ?? []).map((e) => e.oracleId);
-            for (const required of config.requiredOracles) {
-              if (!providedOracles.includes(required)) {
-                passed = false;
-                break;
-              }
-            }
-          }
-          break;
-        }
-
-        case 'workflow-state':
-        case 'cron-schedule':
-        case 'rate-limiter':
-        case 'snapshot':
-        case 'registry-reference':
-        case 'count-approval':
-        case 'approval-threshold':
-        case 'cooldown':
-          // These atoms require deeper integration with the V3 rules engine.
-          // Phase 2 will implement the full ComplianceMoleculeFactory.
-          // For now, they pass by default.
-          break;
-
-        default:
-          // Unknown atom type — pass (fail-open for forward compatibility)
-          break;
-      }
-
-      if (!passed) {
-        failedAtoms.push(atom.type);
-      }
-    }
-
-    return { failedAtoms };
   }
 
   // ---------------------------------------------------------------------------
