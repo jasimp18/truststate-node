@@ -35,6 +35,22 @@ export { RegistryService } from './registry';
 // High-level facade
 export { TrustStateV3 } from './truststate-v3';
 
+// Policy library
+export {
+  LibraryService,
+  ALL_TEMPLATES,
+  ALL_PACKS,
+  getTemplateById,
+  getPackById,
+  getTemplatesByPack,
+  searchTemplates,
+} from './library';
+export type { PolicyTemplate, PolicyPack } from './library';
+
+// REST API server
+export { buildRoutes } from './server';
+export type { Route, RouteHandler, ApiResponse } from './server';
+
 // Configuration
 export { TrustStateV3Config, COLLECTIONS, REQUIRED_SERVICES } from './config';
 
