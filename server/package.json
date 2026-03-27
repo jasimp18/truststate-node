@@ -1,0 +1,22 @@
+{
+  "name": "@truststate/server",
+  "version": "0.1.0",
+  "description": "TrustState Trustgate API Server — V3 BaaS-native compliance engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/app.js",
+    "dev": "ts-node src/app.ts"
+  },
+  "dependencies": {
+    "@hsuite/smart-engines-sdk": "file:../packages/smart-engines-sdk",
+    "@hsuite/smart-engines-shared": "file:../packages/smart-engines-shared"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}
